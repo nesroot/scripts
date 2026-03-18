@@ -59,16 +59,39 @@ def parse_keys_line(line):
     dk = parts[1].strip() if len(parts) > 1 else None
     return vk, dk
 
+# ── Helper CLI extra: limpiar ViewState desde clipboard/archivo ───────────────
+def clean_viewstate(raw):
+    """Limpia un ViewState crudo de Burp (URL-encoded, con saltos, espacios)."""
+    s = raw.strip()
+    s = s.replace('\n','').replace('\r','').replace('\t','').replace(' ','')
+    s = s.replace('%2B','+').replace('%2F','/').replace('%3D','=')
+    # Repadding
+    s = s + '=' * (-len(s) % 4)
+    return s
+
 def bruteforce(vs_b64, generator_hex, keys_file, algo="SHA1", verbose=False):
     """
     Núcleo del bruteforce. Itera el archivo de keys e intenta cada una.
     """
+    # Limpiar ViewState: eliminar espacios, saltos de línea, tabs y URL-encoding
+    vs_b64 = vs_b64.strip()
+    vs_b64 = vs_b64.replace('\n', '').replace('\r', '').replace('\t', '').replace(' ', '')
+    vs_b64 = vs_b64.replace('%2B', '+').replace('%2F', '/').replace('%3D', '=')
+    vs_b64 = pad_base64(vs_b64)
+    print(f"[*] ViewState limpio: {len(vs_b64)} chars")
+
     # Preparar bytes del ViewState
     try:
-        vs_bytes = base64.b64decode(pad_base64(vs_b64))
+        vs_bytes = base64.b64decode(vs_b64)
     except Exception as e:
         print(f"\n[!] Error decodificando ViewState: {e}")
-        print("    Verifica que no tenga espacios o saltos de línea.")
+        print(f"    Longitud actual: {len(vs_b64)} chars")
+        print(f"    Últimos 10 chars: '{vs_b64[-10:]}'")
+        print("\n    Soluciones:")
+        print("    1. Guarda el ViewState en archivo desde Burp:")
+        print("       Click derecho en el valor → Copy to file → /tmp/vs.txt")
+        print("       Luego: python3 machinekey_brute.py --vs-file /tmp/vs.txt ...")
+        print("    2. En Burp: selecciona el valor → Decoder → URL decode → copia resultado")
         sys.exit(1)
 
     # Preparar modifier (VIEWSTATEGENERATOR en bytes)
@@ -164,6 +187,8 @@ def interactive_mode():
             break
         lines.append(line)
     vs = ''.join(lines).strip()
+    vs = vs.replace('\n','').replace('\r','').replace('\t','').replace(' ','')
+    vs = vs.replace('%2B','+').replace('%2F','/').replace('%3D','=')
 
     # Generator
     print("\n2. Valor de __VIEWSTATEGENERATOR (8 chars hex, ej: C2EE9ABB):")
@@ -195,6 +220,20 @@ def interactive_mode():
     return bruteforce(vs, gen, keys_file, algo)
 
 def main():
+    # Modo --clean: limpiar ViewState antes del argparse
+    if len(sys.argv) >= 3 and sys.argv[1] == "--clean":
+        src = sys.argv[2]
+        raw = open(src).read() if os.path.exists(src) else src
+        cleaned = clean_viewstate(raw)
+        out = "/tmp/vs_clean.txt"
+        with open(out, "w") as f: f.write(cleaned)
+        print(f"[+] Guardado en {out} ({len(cleaned)} chars)")
+        try:
+            base64.b64decode(cleaned)
+            print("[+] Base64 válido ✓ — usa: --vs-file /tmp/vs_clean.txt")
+        except Exception as e:
+            print(f"[!] Aún inválido: {e}")
+        sys.exit(0)
     parser = argparse.ArgumentParser(
         description="ASP.NET MachineKey Bruteforcer — Pentest Tool",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -247,3 +286,23 @@ Ejemplos:
 
 if __name__ == '__main__':
     main()
+
+
+
+if __name__ == '__main__' and len(sys.argv) >= 3 and sys.argv[1] == '--clean':
+    src = sys.argv[2]
+    raw = open(src).read() if os.path.exists(src) else src
+    cleaned = clean_viewstate(raw)
+    out = '/tmp/vs_clean.txt'
+    with open(out, 'w') as f:
+        f.write(cleaned)
+    print(f"[+] ViewState limpio guardado en {out}")
+    print(f"[+] Longitud: {len(cleaned)} chars")
+    print(f"[+] Primeros 40 chars: {cleaned[:40]}...")
+    try:
+        import base64 as b64
+        b64.b64decode(cleaned)
+        print("[+] Base64 válido ✓ — listo para usar con --vs-file /tmp/vs_clean.txt")
+    except Exception as e:
+        print(f"[!] Aún inválido: {e}")
+    sys.exit(0)
