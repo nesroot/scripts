@@ -1,0 +1,2 @@
+curl -s -k -I "https://TARGET/" | grep -iE \
+"(content-security|x-frame|x-content-type|strict-transport|referrer-policy|permissions-policy|x-xss|x-powered|x-aspnet|server)"
